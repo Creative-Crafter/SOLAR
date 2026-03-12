@@ -1,0 +1,14 @@
+pyperclip
+dateparser
+ics
+vosk
+sounddevice
+soundfile
+numpy
+pyautogui
+pygetwindow
+screeninfo
+ollama
+kokoro
+PyYAML
+opencv-python
