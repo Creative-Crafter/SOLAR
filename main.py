@@ -32,7 +32,7 @@ SAMPLE_RATE     = 24000
 VOSK_RATE       = 16000
 VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"
 
-_CALL_RE = re.compile(r'anruf', re.IGNORECASE)
+_CALL_RE = re.compile(r'call', re.IGNORECASE)
 
 stt_queue               = queue.Queue()
 listening_for_wake_word = True
@@ -92,7 +92,7 @@ def _get_window_title(hwnd: int) -> str:
 def find_call_hwnd():
     """
     Enumerate all visible top-level windows via Win32 EnumWindows.
-    Returns the HWND of the first window whose title contains 'anruf', or None.
+    Returns the HWND of the first window whose title contains 'call', or None.
     Thread-safe — no COM initialisation required.
     """
     found = []
@@ -205,7 +205,7 @@ def handle_call(hwnd: int) -> None:
 
     try:
         response = chat(
-            model="solar-llama3.2-vision:11b",
+            model="Creative-Crafter/SOLAR-llama3.2-vision:11b",
             messages=[{
                 "role": "user",
                 "content": (
@@ -213,7 +213,7 @@ def handle_call(hwnd: int) -> None:
                     "What is the name of the PERSON calling? "
                     "It is a human name — like Anna, Thomas, or Maria — "
                     "shown as large white text in the centre of the screen. "
-                    "NOT WhatsApp. NOT Sprachanruf. NOT Annehmen. NOT Chrome. "
+                    "NOT WhatsApp. NOT Voicecall. NOT Annehmen. NOT Chrome. "
                     "Those are app or button labels, not the caller's name. "
                     'Reply ONLY with the human name inside quotation marks, '
                     'e.g.: "Anna Müller" — nothing else.'
@@ -241,19 +241,21 @@ def handle_call(hwnd: int) -> None:
         click_button(hwnd, ACCEPT_IMG)
     elif "no" in user_response or "busy" in user_response:
         click_button(hwnd, ACCEPT_IMG)
-        speak("Hi, here is "+ data[0]["name"] + ". " + data[0]["user_name"] + " cannot speak right now, call again later.")
+        speak("Hi, here is " + data[0]["name"] + ". " + data[0]["user_name"] + " cannot speak right now, call again later.")
         time.sleep(1)
         click_button(hwnd, DECLINE_IMG)
-    else:
-        call_in_progress = False
+    
+    call_in_progress = False  # ← moved here, runs in ALL branches
 
 def call_monitor_loop() -> None:
+    global call_in_progress  # ← add this
     print("[Call Monitor] Running.")
     while running:
         hwnd = find_call_hwnd()
         if hwnd is not None and not call_in_progress:
             handle_call(hwnd)
             wait_for_call_to_end()
+            call_in_progress = False
             print("[Call Monitor] Ready for next call.")
         time.sleep(CHECK_INTERVAL)
 
