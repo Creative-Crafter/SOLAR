@@ -20,7 +20,7 @@ def get_screen_position(screen_number):
         m = monitors[int(screen_number) - 1]  # 1-indexed
         return m.x, m.y
     except (IndexError, ValueError):
-        print(f"⚠️ Screen {screen_number} not found. Defaulting to primary.")
+        print(f" Screen {screen_number} not found. Defaulting to primary.")
         return 0, 0
 
 def launch_and_move(target, screen_num=1):
@@ -30,12 +30,12 @@ def launch_and_move(target, screen_num=1):
     is_url = target.startswith("http") or "www." in target
     
     if is_url:
-        print(f"🌐 Opening website: {target}")
+        print(f" Opening website: {target}")
         cmd = f'start chrome --new-window "{target}"'
         subprocess.Popen(cmd, shell=True)
         search_title = "Google Chrome"
     else:
-        print(f"🚀 Opening application: {target}")
+        print(f" Opening application: {target}")
         pyautogui.press('win')
         time.sleep(0.4)
         pyautogui.write(target)
@@ -59,11 +59,11 @@ def launch_and_move(target, screen_num=1):
             time.sleep(0.2)
             target_window.moveTo(x + 50, y + 50)
             target_window.maximize()
-            print(f"✅ Successfully placed {target} on Screen {screen_num}")
+            print(f" Successfully placed {target} on Screen {screen_num}")
         except Exception as e:
-            print(f"❌ Could not move window: {e}")
+            print(f" Could not move window: {e}")
     else:
-        print(f"⚠️ Timeout: Could not find a window for '{target}'")
+        print(f" Timeout: Could not find a window for '{target}'")
 
 # ------------------- Messaging Images -------------------
 whatsapp = "whatsapp.png"
@@ -290,7 +290,7 @@ def extract_event_details(command):
 def create_and_open_calendar_event(command):
     event_data = extract_event_details(command)
     if not event_data:
-        print("⚠️  Could not extract event details.")
+        print("  Could not extract event details.")
         return
     cal = Calendar()
     e = Event()
