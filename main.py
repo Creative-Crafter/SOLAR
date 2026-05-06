@@ -39,7 +39,16 @@ listening_for_wake_word = True
 running                 = True
 call_in_progress        = False
 
-pipeline  = KPipeline(lang_code="a")
+HF_CACHE_DIR = r"C:\solar\hf_cache"
+os.makedirs(HF_CACHE_DIR, exist_ok=True)
+os.environ["HF_HOME"] = HF_CACHE_DIR
+os.environ["HUGGINGFACE_HUB_CACHE"] = os.path.join(HF_CACHE_DIR, "hub")
+
+from kokoro import KPipeline  # keep this import AFTER env vars
+pipeline = KPipeline(lang_code="a")
+
+
+
 _tts_lock = threading.Lock()
 
 
