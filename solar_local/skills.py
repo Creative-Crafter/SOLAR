@@ -11,7 +11,6 @@ from ics import Calendar, Event
 import tempfile
 import os
 import requests
-
 # ------------------- Window & Screen Management -------------------
 def get_screen_position(screen_number):
     """Returns the (x, y) coordinates for the top-left of a specific monitor."""
@@ -73,19 +72,114 @@ instagram2 = "insta2.png"
 instagram3 = "insta3.png"
 
 # ------------------- Sending Messages -------------------
-def parse_sentence(sentence: str):
+def normalize_model_output(output: str) -> str:
+    output = output.strip()
+
+    if output.startswith("```") and output.endswith("```"):
+        output = output[3:-3].strip()
+        if "\n" in output:
+            first_line, rest = output.split("\n", 1)
+            if not first_line.strip().startswith("/"):
+                output = rest.strip()
+
+    if output.startswith("`") and output.endswith("`"):
+        output = output[1:-1].strip()
+
+    command_match = re.search(
+        r'(?im)^/(send|time|date|code|event|open)\b.*$',
+        output
+    )
+    if command_match:
+        output = command_match.group(0).strip()
+
+    return output
+
+def parse_send_command(output: str):
     """
-    Erwartetes Format:
-    'say <message> to <name> on <platform>'
+    Erwartetes Format vom Modelfile:
+    /send Message: "<message>"; Name: "<name>"; Platform: "<platform>"
     """
-    pattern = r"^say\s+(.+?)\s+to\s+(.+?)\s+on\s+(.+)$"
-    match = re.match(pattern, sentence)
+    pattern = (
+        r'^/send\s+'
+        r'Message:\s*"(?P<message>.*?)"\s*;\s*'
+        r'Name:\s*"(?P<name>.*?)"\s*;\s*'
+        r'Platform:\s*"(?P<platform>discord|whatsapp|instagram)"\s*$'
+    )
+    match = re.match(pattern, output.strip(), re.IGNORECASE | re.DOTALL)
     if not match:
-        raise ValueError("Sentence does not match expected format: 'say <message> to <name> on <platform>'")
-    message = match.group(1).strip()
-    name = match.group(2).strip()
-    platform = match.group(3).strip()
+        return None
+
+    message = match.group("message").strip()
+    name = match.group("name").strip()
+    platform = match.group("platform").strip().lower()
+
+    if not message or not name or not platform:
+        return None
+
     return message, name, platform
+
+def parse_code_command(output: str):
+    """
+    Expected format from the Modelfile:
+    /code "<clear description of the code the user wants>"
+    """
+    output = normalize_model_output(output)
+    pattern = r'^/code\s+"(?P<request>.*?)"\s*$'
+    match = re.match(pattern, output.strip(), re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+
+    code_request = match.group("request").strip()
+    if not code_request:
+        return None
+
+    return code_request
+
+def parse_event_command(output: str):
+    """
+    Expected format from the Modelfile:
+    /event name: "<event name>"; date-start: "<start date>"; time-start: "<start time>"; date-end: "<end date>"; time-end: "<end time>"
+    """
+    output = normalize_model_output(output)
+    pattern = (
+        r'^/event\s+'
+        r'name:\s*"(?P<name>.*?)"\s*;\s*'
+        r'date-start:\s*"(?P<date_start>.*?)"\s*;\s*'
+        r'time-start:\s*"(?P<time_start>.*?)"\s*;\s*'
+        r'date-end:\s*"(?P<date_end>.*?)"\s*;\s*'
+        r'time-end:\s*"(?P<time_end>.*?)"\s*$'
+    )
+    match = re.match(pattern, output.strip(), re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+
+    name = match.group("name").strip()
+    date_start = match.group("date_start").strip()
+    time_start = match.group("time_start").strip()
+    date_end = match.group("date_end").strip()
+    time_end = match.group("time_end").strip()
+
+    if not all([name, date_start, time_start, date_end, time_end]):
+        return None
+
+    return name, date_start, time_start, date_end, time_end
+
+def parse_open_command(output: str):
+    """
+    Expected format from the Modelfile:
+    /open "<application or website the user wants to open>"
+    """
+    output = normalize_model_output(output)
+    pattern = r'^/open\s+(?:"(?P<quoted_target>.*?)"|(?P<plain_target>.+?))\s*$'
+    match = re.match(pattern, output.strip(), re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+
+    target = (match.group("quoted_target") or match.group("plain_target")).strip()
+    if not target:
+        return None
+
+    return target
 
 def click_image_in_window(window, image_path, confidence=0.8):
     if not os.path.exists(image_path):
@@ -102,16 +196,14 @@ def click_image_in_window(window, image_path, confidence=0.8):
         print(f"{image_path} button not found.")
         return False
 
-def send_message_skill(command: str):
+def send_message_skill(message: str, name: str, platform: str):
     """
-    Sends a message based on the format:
-    'say <message> to <name> on <platform>'
+    Sends a message using parsed /send variables from process_text.
     Supported platforms: whatsapp, discord, instagram
     """
-    try:
-        message, name, platform = parse_sentence(command)
-    except ValueError as e:
-        return str(e)
+    message = message.strip()
+    name = name.strip()
+    platform = platform.strip().lower()
 
     window = None
     print("Message:", message)
@@ -168,22 +260,11 @@ def send_message_skill(command: str):
         return f"Platform '{platform}' not supported."
 
 # ------------------- External AI APIs -------------------
-def ask_deepseek(prompt: str) -> str:
-    try:
-        r = requests.post(
-            "http://127.0.0.1:11434/api/generate",
-            json={"model": "deepseek-v2:16b", "prompt": prompt, "stream": False},
-            timeout=60
-        )
-        return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
-    except Exception as e:
-        return f"Request failed: {e}"
-
 def ask_ollama(prompt: str) -> str:
     try:
         r = requests.post(
             "http://127.0.0.1:11434/api/generate",
-            json={"model": "Creative-Crafter/SOLAR-llama3.2-vision:11b", "prompt": prompt, "stream": False},
+            json={"model": "Creative-Crafter/SOLAR-llama3.2-vision:11bv2", "prompt": prompt, "stream": False},
             timeout=60
         )
         return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
@@ -203,95 +284,79 @@ def ask_deepseekcoder(prompt: str) -> str:
 
 # ------------------- Text Command Processor -------------------
 def process_text(command):
-    command = command.lower()
     print("command: ", command)
+    output = normalize_model_output(ask_ollama(command))
 
-    if "send message" in command or ("say" in command and "to" in command and "on" in command):
-        return send_message_skill(command)
+    if output.lower().startswith("/send"):
+        parsed = parse_send_command(output)
+        if not parsed:
+            return "I could not understand the send command."
 
-    elif "time" in command:
+        message, name, platform = parsed
+        return send_message_skill(message, name, platform)
+
+    elif output.lower().startswith("/time"):
         now = datetime.now()
         current_time = now.strftime("%I:%M %p")
         return f"The current time is {current_time}."
 
-    elif "date" in command:
+    elif output.lower().startswith("/date"):
         today = datetime.now()
         current_date = today.strftime("%A, %B %d, %Y")
         return f"Today is {current_date}."
 
-    elif "code" in command or "program" in command:
-        code = ask_deepseekcoder("Do not text me any explanation, only the code. That's what you should make: " + command)
+    elif output.lower().startswith("/code"):
+        code_request = parse_code_command(output)
+        if not code_request:
+            return "I could not understand the code command."
+
+        code = ask_deepseekcoder("Return only the complete code. Do not include explanations, Markdown, or extra text. Task: " + code_request)
         pyperclip.copy(code)
-        return ask_ollama("Describe this code. Only describe it. Code:\n\n" + str(code))
+        return "Here is the code. I also copied it to your clipboard:\n\n" + str(code)
 
-    elif "mail" in command or ("messege" in command and "to" in command):
-        mail = ask_deepseek("Only write the messenge . nothing else" + command)
-        subject = ask_deepseek("write a very short subject for this email: " + mail)
-        return mail
+    elif output.lower().startswith("/event"):
+        parsed = parse_event_command(output)
+        if not parsed:
+            return "I could not understand the calendar event command."
 
-    elif "deadline" in command:
-        create_and_open_calendar_event(command)
-        return "✅ Event created and opened in your calendar app."
+        name, date_start, time_start, date_end, time_end = parsed
+        return create_and_open_calendar_event_from_fields(
+            name,
+            date_start,
+            time_start,
+            date_end,
+            time_end
+        )
 
-    elif command.startswith("open "):
-        target = command[5:].strip()
+
+
+    elif output.lower().startswith("/open"):
+        target = parse_open_command(output)
+        if not target:
+            return "I could not understand the open command."
+
         launch_and_move(target)
         return f"{target} is now open and moved to the default screen."
-    
-    elif command.startswith("oh pen ") or command.startswith("oh pin "):
-        target = command[6:].strip()
-        launch_and_move(target)
-        return f"{target} is now open and moved to the default screen."
 
-    else:
-        return ask_ollama(command)
+    else: return output
 
 # ------------------- Helper Functions -------------------
-def extract_triple_quote_blocks(text):
-    pattern = r"```([^\n]*)\n(.*?)\n?```"
-    matches = re.findall(pattern, text, re.DOTALL)
-    code_blocks = []
-    for i, (lang, code) in enumerate(matches, 1):
-        lang = lang.strip().lower()
-        ext = {
-            "python": ".py",
-            "html": ".html",
-            "js": ".js",
-            "javascript": ".js",
-            "css": ".css"
-        }.get(lang, ".txt")
-        filename = f"codeblock_{i}_{lang}{ext}"
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(code.strip())
-        code_blocks.append(code.strip())
-    return code_blocks
+def create_and_open_calendar_event_from_fields(name, date_start, time_start, date_end, time_end):
+    start_dt = dateparser.parse(f"{date_start} {time_start}")
+    end_dt = dateparser.parse(f"{date_end} {time_end}")
 
-def extract_all_phone_numbers(text):
-    pattern = r'(?:(?:\+|00)[1-9]\d{0,2})?[\s\-]?(?:\(?\d+\)?[\s\-]?){4,}'
-    matches = re.findall(pattern, text)
-    return [re.sub(r'[\s\-\(\)]', '', m) for m in matches]
-
-def extract_event_details(command):
-    title_match = re.search(r"(name it|called)\s+(.*?)[\.\n]?$", command, re.IGNORECASE)
-    title = title_match.group(2).strip() if title_match else "Untitled Event"
-    time_match = re.search(r"(from|between)\s+(.*?)\s+(to|and)\s+(.*?)([\.\n]|$)", command, re.IGNORECASE)
-    if not time_match:
-        return None
-    start_time_str = time_match.group(2).strip()
-    end_time_str = time_match.group(4).strip()
-    date_match = re.search(r"(on\s+\w+ \d+|tomorrow|today|next \w+)", command, re.IGNORECASE)
-    date_context = date_match.group(0) if date_match else "today"
-    start_dt = dateparser.parse(f"{date_context} at {start_time_str}")
-    end_dt = dateparser.parse(f"{date_context} at {end_time_str}")
     if not start_dt or not end_dt:
-        return None
-    return {"title": title, "start_dt": start_dt, "end_dt": end_dt}
+        return "I could not parse the event date or time."
 
-def create_and_open_calendar_event(command):
-    event_data = extract_event_details(command)
-    if not event_data:
-        print("  Could not extract event details.")
-        return
+    event_data = {
+        "title": name,
+        "start_dt": start_dt,
+        "end_dt": end_dt,
+    }
+    open_calendar_event(event_data)
+    return f"Event created: {name}."
+
+def open_calendar_event(event_data):
     cal = Calendar()
     e = Event()
     e.name = event_data["title"]
