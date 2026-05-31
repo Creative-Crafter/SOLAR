@@ -3,7 +3,7 @@ import pyautogui
 import pygetwindow as gw
 from screeninfo import get_monitors
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import pyperclip
 import re
 import dateparser
@@ -91,6 +91,13 @@ def normalize_model_output(output: str) -> str:
     )
     if command_match:
         output = command_match.group(0).strip()
+    else:
+        inline_command_match = re.search(
+            r'(?i)`?/(time|date)`?',
+            output
+        )
+        if inline_command_match:
+            output = "/" + inline_command_match.group(1).lower()
 
     return output
 
@@ -260,22 +267,33 @@ def send_message_skill(message: str, name: str, platform: str):
         return f"Platform '{platform}' not supported."
 
 # ------------------- External AI APIs -------------------
-def ask_ollama(prompt: str) -> str:
+def ask_ollama1(prompt: str) -> str:
     try:
         r = requests.post(
             "http://127.0.0.1:11434/api/generate",
-            json={"model": "Creative-Crafter/SOLAR-gemma3:27b_cloud", "prompt": prompt, "stream": False},
+            json={"model": "Creative-Crafter/SOLAR-lgemma3:27b-cloud", "prompt": prompt, "stream": False},
             timeout=60
         )
         return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
     except Exception as e:
         return f"Request failed: {e}"
     
-def ask_qwen(prompt: str) -> str:
+def ask_ollama2(prompt: str) -> str:
     try:
         r = requests.post(
             "http://127.0.0.1:11434/api/generate",
-            json={"model": "qwen3-coder-next:cloud", "prompt": prompt, "stream": False},
+            json={"model": "Creative-Crafter/SOLAR-gemma3:27b-cloud2", "prompt": prompt, "stream": False},
+            timeout=60
+        )
+        return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
+    except Exception as e:
+        return f"Request failed: {e}"
+    
+def ask_deepseekcoder(prompt: str) -> str:
+    try:
+        r = requests.post(
+            "http://127.0.0.1:11434/api/generate",
+            json={"model": "Malicus7862/deepseekcoder-6.7b-jarvis-gguf:latest", "prompt": prompt, "stream": False},
             timeout=60
         )
         return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
@@ -285,7 +303,7 @@ def ask_qwen(prompt: str) -> str:
 # ------------------- Text Command Processor -------------------
 def process_text(command):
     print("command: ", command)
-    output = normalize_model_output(ask_ollama(command))
+    output = normalize_model_output(ask_ollama1(command))
 
     if output.lower().startswith("/send"):
         parsed = parse_send_command(output)
@@ -298,19 +316,37 @@ def process_text(command):
     elif output.lower().startswith("/time"):
         now = datetime.now()
         current_time = now.strftime("%I:%M %p")
-        return f"The current time is {current_time}."
+        return ask_ollama2(
+    f"""The question:
+""" + command + """
+
+The information you have:
+the current time: """ + current_time +"""
+
+Give me the answer to that."""
+)
 
     elif output.lower().startswith("/date"):
         today = datetime.now()
         current_date = today.strftime("%A, %B %d, %Y")
-        return f"Today is {current_date}."
+        week_day = today.strftime("%A")
+        return ask_ollama2(
+    f"""The question:
+{command}
+
+The information you have:
+the current date: {current_date}
+the current day of the week: {week_day}
+
+Give me the answer to that."""
+)
 
     elif output.lower().startswith("/code"):
         code_request = parse_code_command(output)
         if not code_request:
             return "I could not understand the code command."
 
-        code = ask_qwen("Return only the complete code. Do not include explanations, Markdown, or extra text. Task: " + code_request)
+        code = ask_deepseekcoder("Return only the complete code. Do not include explanations, Markdown, or extra text. Task: " + code_request)
         pyperclip.copy(code)
         return "Here is the code. I also copied it to your clipboard:\n\n" + str(code)
 
