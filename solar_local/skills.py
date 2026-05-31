@@ -264,7 +264,7 @@ def ask_ollama(prompt: str) -> str:
     try:
         r = requests.post(
             "http://127.0.0.1:11434/api/generate",
-            json={"model": "Creative-Crafter/SOLAR-llama3.2-vision:11bv2", "prompt": prompt, "stream": False},
+            json={"model": "Creative-Crafter/SOLAR-llama3.2-vision:11b", "prompt": prompt, "stream": False},
             timeout=60
         )
         return r.json().get("response", "").strip() if r.ok else f"Error {r.status_code}: {r.text}"
